@@ -16,7 +16,7 @@ covering everything the app does and a few things it cannot.
 There is no OAuth app to register: a handle and an app password are all you
 need, and most reads work with no credentials at all.
 
-Built and maintained by [Navid Moazzez](https://navid.me?utm_source=github&utm_medium=readme&utm_campaign=bluesky-mcp-cli).
+Built and maintained by [Navid Moazzez](https://navid.me?utm_source=github&utm_medium=referral&utm_campaign=bluesky-mcp-cli&utm_content=readme).
 
 <img src="https://cdn.navid.media/repos/bluesky-mcp-cli.gif?v=3" alt="Claude Code using the Bluesky MCP server" width="520">
 
@@ -873,7 +873,7 @@ Navid Moazzez is a leading AI business strategist, and the host of the AI Creato
 
 **Links**
 
-- Personal website: [navid.me](https://navid.me?utm_source=github&utm_medium=readme&utm_campaign=bluesky-mcp-cli)
+- Personal website: [navid.me](https://navid.me?utm_source=github&utm_medium=referral&utm_campaign=bluesky-mcp-cli&utm_content=readme)
 - YouTube: [@thenavidm](https://youtube.com/@thenavidm?sub_confirmation=1) and [@thenavidai](https://youtube.com/@thenavidai?sub_confirmation=1)
 - X: [@thenavidm](https://x.com/thenavidm)
 - Instagram: [@thenavidm](https://instagram.com/thenavidm)
@@ -898,4 +898,4 @@ Not affiliated with, endorsed by, or connected to Bluesky Social PBC.
 
 ---
 
-© 2026 [NM Media](https://navid.media?utm_source=github&utm_medium=readme&utm_campaign=bluesky-mcp-cli). Made with ❤️ by [Navid Moazzez](https://navid.me?utm_source=github&utm_medium=readme&utm_campaign=bluesky-mcp-cli).
+© 2026 [NM Media](https://navid.media?utm_source=github&utm_medium=referral&utm_campaign=bluesky-mcp-cli&utm_content=readme). Made with ❤️ by [Navid Moazzez](https://navid.me?utm_source=github&utm_medium=referral&utm_campaign=bluesky-mcp-cli&utm_content=readme).
