@@ -111,7 +111,7 @@ All 45 with their arguments are in [section 4](#6-tools).
 | 2 | [Set up your account](#2-set-up-your-account) | Get your app password first |
 | 3 | [Install](#3-install) | Every client, copy and paste, plus the shell |
 | 4 | [Output and exit codes](#4-output-and-exit-codes) | What scripts branch on |
-| 5 | [Which surface, and what each costs](#5-which-surface-and-what-each-costs) | 10,969 tokens a turn, or 108 |
+| 5 | [Which surface, and what each costs](#5-which-surface-and-what-each-costs) | Measured in Claude Code, and how to spend less |
 | 6 | [Tools](#6-tools) | All 45, with arguments |
 | 7 | [Writing safely](#7-writing-safely) | Why posting asks twice |
 | 8 | [Writing posts](#8-writing-posts) | Links, mentions, media, threads |
@@ -291,51 +291,40 @@ fi
 
 ## 5. Which surface, and what each costs
 
-Both surfaces carry the same 45 tools. They differ in when you pay for them.
+Both surfaces are the same program with the same 45 tools. The
+difference is when the model pays for them. Measured in Claude Code:
 
 | | MCP server | CLI |
 |---|---|---|
-| Loaded every turn | **10,969 tokens** | 108 tokens |
-| Loaded when Bluesky comes up | nothing more | 1,772 more, once |
-| Works on claude.ai and mobile | yes | no, there is no shell there |
-| Works in a script, cron or CI | no | yes |
-| You invoke it by | asking in plain language | typing a command |
+| Every message, with every tool loaded | 15,900 tokens | nothing |
+| Every message, Claude Code's default | 1,100 tokens | nothing |
+| When Bluesky comes up | nothing more, or the tools it picks | 1,900 tokens for `SKILL.md`, once |
+| 20 messages with Bluesky in 1, every tool loaded | 317,000 tokens | 1,900 tokens |
 
-An MCP server sends its whole tool list to the model on **every turn**, whether
-you mention Bluesky or not. That is the price of being connected at all, before
-you ask anything.
+Claude Code's [tool search](https://code.claude.com/docs/en/mcp#scale-with-mcp-tool-search)
+is on by default: it sends only the tool names and the server instructions,
+and loads a tool's full definition when the model reaches for it. An app that
+loads every tool up front pays the first line on every message, whether
+Bluesky comes up or not. With the skill added, Claude Code also lists its
+one-line description, about 150 tokens.
 
-Over twenty turns where Bluesky comes up once, that is 219,380 tokens against
-3,932. When the whole conversation is Bluesky, the gap closes and the server is
-the better experience, because you ask in plain language instead of remembering
-flags.
+Where the tokens go, with every tool loaded:
 
-Every number here came from a real `tools/list` handshake against this build,
-counted with a tokeniser rather than estimated from character length.
-
-### Where the 10,969 goes
-
-Worth knowing, because most of it is not something anyone can write away:
-
-| Part of the payload | Share |
+| Part of the tool list | Share |
 |---|---|
-| JSON Schema structure: types, required lists, nesting | **55%** |
+| JSON Schema structure: types, required lists, nesting | 55% |
 | Argument descriptions | 31% |
 | Tool descriptions | 14% |
 
-Roughly 5,900 tokens are the protocol serialising every tool as JSON Schema.
-Any MCP server with this many tools pays the same. The 45% that is prose is what
-makes the tools usable without guessing.
+To spend less, turn the server off when you are not using it, which in Claude
+Code is the `/mcp` panel. `BLUESKY_READ_ONLY=1` takes the 15 write tools off the list, leaving 30.
+Or install the CLI and add the server on the days it earns its place.
 
-### Spending less
-
-**Turn the server off when you are not using Bluesky.** In Claude Code that is
-`@bluesky` to toggle, and every client has an equivalent. `BLUESKY_READ_ONLY=1`
-drops it to the 30 reading tools.
-
-**Or install the CLI and skip the server.** All 45 tools stay reachable, the
-standing cost falls to 108 tokens, and you connect the server
-later on the days it earns its place.
+Measured on 2026-09-27 with Claude Code 2.1.257 on Claude Opus 5: one
+short prompt with and without the server connected, once with
+`ENABLE_TOOL_SEARCH=false` and once with the default, the difference read
+from the API's own usage figures. `SKILL.md` was measured the same way. Other
+apps and models count tokens a little differently.
 
 ## 6. Tools
 
@@ -764,7 +753,7 @@ protocol. You never call the tools yourself, you just ask in plain language.
 <details>
 <summary><b>Should I use the MCP server or the CLI?</b></summary>
 
-Use the MCP server in an app with no terminal, like Claude Desktop's chat. Use the CLI anywhere commands run: an agent like Claude Code, Codex or OpenCode, a script or a cron job. The MCP server sends its full tool list to the model on every turn, and the CLI costs nothing until it runs.
+Use the MCP server in an app with no terminal, like Claude Desktop's chat. Use the CLI anywhere commands run: an agent like Claude Code, Codex or OpenCode, a script or a cron job. The MCP server's tools take up context on every message, and the CLI costs nothing until it runs.
 
 </details>
 
