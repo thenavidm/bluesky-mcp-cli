@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        node: [20, 22]
+        node: [22, 24]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -99,10 +99,11 @@ jobs:
             '
 
       - name: Public reads work with no credentials
+        # Stdin stays open while the call goes out: the MCP stdio binding stops a server whose input has ended.
         run: |
-          printf '%s\n%s\n' \
+          (printf '%s\n%s\n' \
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
-            '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_profile","arguments":{"actors":["bsky.app"]}}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_profile","arguments":{"actors":["bsky.app"]}}}'; sleep 10) \
             | node dist/index.js 2>/dev/null \
             | node -e '
               let raw = "";

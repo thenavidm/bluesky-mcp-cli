@@ -1,62 +1,25 @@
 /**
- * Shared plumbing every tool uses.
+ * Shared plumbing every tool uses, now on Slipway.
  *
- * Registering forty tools by hand is forty chances to forget an annotation,
- * leak a stack trace, or return a shape the model cannot read. This wraps all
- * of it once so a tool module only describes what it actually does.
+ * Tool modules keep describing themselves with a Zod shape, a risk and a
+ * handler. This adapter turns each into a Slipway tool, so the MCP server, the
+ * CLI, the write guard, annotations and errors all come from the framework
+ * instead of a copy kept in this repo.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z, type ZodRawShape } from "zod";
+import { toolkit, z, type Risk, type Tool } from "@thenavidm/slipway";
 import type { BlueskyClient } from "../api/client.js";
-import { AtpError } from "../api/errors.js";
 import type { Account, Config } from "../config.js";
 import { selectAccount } from "../config.js";
-import { annotationsFor, type Risk, type WriteGuard } from "../safety.js";
 
 export type ToolContext = {
   client: BlueskyClient;
   config: Config;
-  guard: WriteGuard;
   /** Resolve which account this call acts as. */
   account: (hint?: string) => Account;
 };
 
-export type ToolResult = {
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-};
-
-/**
- * A tool returns either a pre-rendered string or a value to serialise.
- *
- * The reading tools return the tagged format from `format/posts.ts`, which is
- * already text. The writing tools return a small object, a URI, a permalink,
- * where JSON is clearer than tags. Both go through here so neither has to think
- * about the MCP content envelope.
- */
-export function ok(data: unknown): ToolResult {
-  const text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
-  return { content: [{ type: "text", text }] };
-}
-
-/**
- * Errors come back as a normal result with `isError`, not a thrown exception.
- *
- * A thrown MCP error reaches the model as a protocol failure with no structure.
- * A result it can read tells it what went wrong and usually how to fix it,
- * which is the difference between a correct retry and a give-up.
- */
-export function fail(error: unknown): ToolResult {
-  const payload =
-    error instanceof AtpError
-      ? error.toJSON()
-      : { error: (error as Error)?.message ?? String(error) };
-  return {
-    content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
-    isError: true,
-  };
-}
+const kit = toolkit<ToolContext>();
 
 /** The optional argument that picks an account, on every account-scoped tool. */
 export const accountArg = {
@@ -68,32 +31,26 @@ export const accountArg = {
     ),
 };
 
-/** The confirmation argument required by every public or irreversible tool. */
+/**
+ * Kept so tool modules read the same, but never sent: Slipway adds `confirm`
+ * to every irreversible tool itself, with one description everywhere.
+ */
 export const confirmArg = {
-  confirm: z
-    .boolean()
-    .optional()
-    .describe(
-      "Must be true for this to run. The result is public immediately or cannot be undone, so it is refused without an explicit confirmation.",
-    ),
+  confirm: z.boolean().optional(),
 };
 
 /** Cursor and limit, on every paginating tool. */
 export const pageArgs = {
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .optional()
-    .describe("How many to return per page, 1-100."),
+  limit: z.number().int().min(1).max(100).optional().describe("How many to return per page, 1-100."),
   cursor: z
     .string()
     .optional()
     .describe("Continue from a previous page. Pass the `cursor` attribute from the last result."),
 };
 
-export type ToolSpec<S extends ZodRawShape> = {
+type Shape = Record<string, z.ZodType>;
+
+export type ToolSpec<S extends Shape> = {
   name: string;
   /** One line, imperative. Shown in tool pickers. */
   title: string;
@@ -109,72 +66,24 @@ export type ToolSpec<S extends ZodRawShape> = {
   summary?: (args: z.infer<z.ZodObject<S>>) => string;
 };
 
-export function defineTool<S extends ZodRawShape>(spec: ToolSpec<S>): ToolSpec<S> {
-  return spec;
+export type AnyToolSpec = Tool<ToolContext>;
+
+export function defineTool<S extends Shape>(spec: ToolSpec<S>): Tool<ToolContext> {
+  const { confirm: _confirm, ...shape } = spec.schema as Shape;
+  return kit.defineTool({
+    name: spec.name,
+    title: spec.title,
+    description: spec.description,
+    input: z.object(shape),
+    risk: spec.risk,
+    ...(spec.idempotent !== undefined ? { idempotent: spec.idempotent } : {}),
+    ...(spec.summary ? { summary: spec.summary as (args: Record<string, unknown>) => string } : {}),
+    handler: spec.handler as (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>,
+  });
 }
 
-/**
- * A tool of any shape, for the one place tools are held together in a list.
- *
- * `ToolSpec` is generic over its schema, so a list of tools with different
- * schemas has no single type: each handler takes a different argument shape and
- * function parameters are contravariant. The type safety that matters lives
- * inside each `defineTool` call, where schema and handler are checked against
- * each other. This only loosens the seam where they are collected.
- */
-export type AnyToolSpec = Omit<ToolSpec<ZodRawShape>, "handler" | "summary"> & {
-  handler: (args: never, ctx: ToolContext) => Promise<unknown>;
-  summary?: (args: never) => string;
-};
-
-/** Register one tool against the server, with guarding and error handling applied. */
-export function register(
-  server: McpServer,
-  contextFor: (extra: unknown) => ToolContext,
-  spec: AnyToolSpec,
-): void {
-  server.registerTool(
-    spec.name,
-    {
-      title: spec.title,
-      description: spec.description,
-      inputSchema: spec.schema,
-      annotations: {
-        title: spec.title,
-        ...annotationsFor(spec.risk, { public: spec.public, idempotent: spec.idempotent }),
-      },
-    },
-    // The SDK derives its callback type from the schema generic. This wrapper is
-    // generic over the same shape, but TypeScript cannot prove the two are equal
-    // through the indirection, so the cast lives at this single boundary rather
-    // than in every tool definition.
-    (async (args: Record<string, unknown>, extra: unknown) => {
-      try {
-        const ctx = contextFor(extra);
-        if (spec.risk !== "read") {
-          const summary = spec.summary?.(args as never) ?? spec.name;
-          const confirm = (args as { confirm?: boolean }).confirm;
-          ctx.guard.check(spec.name, spec.risk, confirm, summary);
-        }
-        return ok(await spec.handler(args as never, ctx));
-      } catch (error) {
-        return fail(error);
-      }
-    }) as never,
-  );
-}
-
-export function makeContext(
-  client: BlueskyClient,
-  config: Config,
-  guard: WriteGuard,
-): ToolContext {
-  return {
-    client,
-    config,
-    guard,
-    account: (hint?: string) => selectAccount(config, hint),
-  };
+export function makeContext(client: BlueskyClient, config: Config): ToolContext {
+  return { client, config, account: (hint?: string) => selectAccount(config, hint) };
 }
 
 /** Clamp a caller-supplied limit into a range Bluesky will accept. */

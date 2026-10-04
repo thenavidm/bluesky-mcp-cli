@@ -9,11 +9,11 @@ taken here gets copied into every server built afterwards.
 ## Layout
 
 ```
+src/app.ts      the Slipway app: tools, settings, doctor. Slipway owns both surfaces, the guard and the audit log
+src/guide.ts    server instructions, resources and prompts
 src/api/        client, errors, identity resolution
 src/content/    facets, media, text. The AT Protocol specifics
 src/tools/      one module per group, registered in tools/index.ts
-src/safety.ts   WriteGuard: read-only, confirm, audit
-src/doctor.ts   the troubleshooting command
 ```
 
 ## Non-negotiables
@@ -33,8 +33,8 @@ client". Confirming everything is what makes the confirmation on a delete
 worthless.
 
 **Every anticipated failure is an `AtpError` subclass** from `api/errors.ts`.
-The SDK only forwards the message of an error it recognises, so a plain `Error`
-reaches the model as a generic failure with your explanation stripped.
+Slipway maps its HTTP status to the exit code and keeps its message, so a plain
+`Error` reaches the model as an unexpected failure with your explanation lost.
 
 **Facets are computed, never accepted from the caller.** `content/facets.ts`
 turns URLs, hashtags and mentions into real links. Byte offsets, not character

@@ -1,28 +1,7 @@
 /**
- * Assembling the server.
- *
- * Tools, plus the two things most MCP servers skip and clients genuinely use:
- * resources, so a client can pull the context it needs without spending a tool
- * call, and prompts, so the workflows this server is good at are one click
- * rather than something the user has to know to ask for.
+ * The words a client reads: server instructions, the two guides served as
+ * resources, and the prompts. Moved verbatim from the v1 server.
  */
-
-import { createRequire } from "node:module";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { BlueskyClient } from "./api/client.js";
-import { loadConfig, type Config } from "./config.js";
-import { WriteGuard } from "./safety.js";
-import { ALL_TOOLS } from "./tools/index.js";
-import { makeContext, register } from "./tools/kit.js";
-
-/**
- * Read from package.json rather than repeated here.
- *
- * A hardcoded copy silently drifts: 1.1.0 shipped to npm while `--version`
- * still answered 1.0.0, because the release bumped one and not the other.
- */
-const require = createRequire(import.meta.url);
-export const VERSION: string = (require("../package.json") as { version: string }).version;
 
 export const INSTRUCTIONS = `Tools for Bluesky over the AT Protocol: posting, threads, replies, the timeline, search, custom feeds, lists, notifications and the social graph.
 
@@ -40,64 +19,7 @@ Five things worth knowing before calling anything:
 
 Start with whoami to confirm which account you are acting as, get_timeline or get_notifications for what is happening, or get_author_feed to study how someone writes.`;
 
-export type BuiltServer = {
-  server: McpServer;
-  client: BlueskyClient;
-  config: Config;
-  toolCount: number;
-};
-
-export function buildServer(config: Config = loadConfig()): BuiltServer {
-  const client = new BlueskyClient(config);
-  const guard = new WriteGuard(config);
-  const ctx = makeContext(client, config, guard);
-
-  const server = new McpServer({ name: "bluesky", version: VERSION }, { instructions: INSTRUCTIONS });
-
-  // A read-only server should not advertise writes it will refuse.
-  const tools = ALL_TOOLS.filter((tool) => !guard.readOnly || tool.risk === "read");
-  for (const tool of tools) {
-    register(server, () => ctx, tool);
-  }
-
-  registerResources(server, config);
-  registerPrompts(server);
-
-  return { server, client, config, toolCount: tools.length };
-}
-
-/**
- * Resources: the context a model needs about Bluesky itself.
- *
- * A model that knows what a DID is and what a facet does asks better questions.
- * Trimmed to what actually changes behavior, plus the connected accounts, so a
- * client can see which handles are available without a tool call.
- */
-function registerResources(server: McpServer, config: Config): void {
-  server.resource("bluesky-accounts", "bluesky://accounts", async (uri) => ({
-    contents: [
-      {
-        uri: uri.href,
-        mimeType: "application/json",
-        text: JSON.stringify(
-          {
-            count: config.accounts.length,
-            accounts: config.accounts.map((a) => ({ handle: a.handle, service: a.service })),
-            read_only: config.readOnly,
-          },
-          null,
-          2,
-        ),
-      },
-    ],
-  }));
-
-  server.resource("bluesky-concepts", "bluesky://concepts", async (uri) => ({
-    contents: [
-      {
-        uri: uri.href,
-        mimeType: "text/markdown",
-        text: `# Bluesky and the AT Protocol, for an agent
+export const CONCEPTS = `# Bluesky and the AT Protocol, for an agent
 
 ## Identity
 Every account has a permanent **DID** (\`did:plc:…\` or \`did:web:…\`) and a changeable **handle**
@@ -138,17 +60,9 @@ surfaced in the \`labels\` attribute.
 
 ## What is public
 Follows, likes, blocks and posts are all public records in a repository anyone can read. Mutes are the
-only genuinely private thing here.`,
-      },
-    ],
-  }));
+only genuinely private thing here.`;
 
-  server.resource("bluesky-output-format", "bluesky://output-format", async (uri) => ({
-    contents: [
-      {
-        uri: uri.href,
-        mimeType: "text/markdown",
-        text: `# How posts are returned
+export const OUTPUT_FORMAT = `# How posts are returned
 
 Feeds, threads and search results come back as tagged text rather than raw API JSON, roughly a tenth
 the size, and the text is where you expect it.
@@ -176,76 +90,39 @@ Notes:
 - A quote appears as a nested \`<quoted_post>\`; a deleted or blocked one keeps a
   \`state="deleted"\` / \`state="blocked"\` placeholder so the gap is visible.
 - \`cursor\` on the root element continues the listing.
-- Profiles use \`<profile>\`, account lists use \`<actors>\`, notifications use \`<notifications>\`.`,
-      },
-    ],
-  }));
-}
+- Profiles use \`<profile>\`, account lists use \`<actors>\`, notifications use \`<notifications>\`.`;
 
-/** Prompts: the workflows worth having one click away. */
-function registerPrompts(server: McpServer): void {
-  server.prompt(
-    "catch-up",
-    "Summarise what happened on Bluesky while you were away",
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `Catch me up on Bluesky.
+export const PROMPTS = [
+  {
+    name: "catch-up",
+    description: "Summarise what happened on Bluesky while you were away",
+    text: `Catch me up on Bluesky.
 
 1. get_unread_count, then get_notifications with reasons ["mention","reply","quote"]. These are the ones that may need an answer.
 2. get_timeline with since_hours: 12.
 3. Summarise in three parts: what needs a reply from me, what the people I follow are talking about, and anything notable I would regret missing.
 
 Group by theme rather than listing posts. Quote sparingly and link with the post's url attribute. Do not reply to anything or mark anything read unless I ask.`,
-          },
-        },
-      ],
-    }),
-  );
-
-  server.prompt(
-    "draft-thread",
-    "Turn an idea into a Bluesky thread, without posting it",
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `Help me turn an idea into a Bluesky thread.
+  },
+  {
+    name: "draft-thread",
+    description: "Turn an idea into a Bluesky thread, without posting it",
+    text: `Help me turn an idea into a Bluesky thread.
 
 Ask me for the idea if I have not given it. Then:
 1. Read my last 30 posts with get_author_feed (filter: posts_no_replies) so the thread sounds like me and not like a press release.
 2. Draft it as numbered parts, each under 300 characters. The first part has to stand alone. Most people will only see that one.
 3. Show me the draft as plain text. Do NOT call create_thread. When I approve it, post it then.`,
-          },
-        },
-      ],
-    }),
-  );
-
-  server.prompt(
-    "study-account",
-    "Work out how an account gets engagement",
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `Study a Bluesky account and tell me what actually works for them. Ask me whose account if I have not said.
+  },
+  {
+    name: "study-account",
+    description: "Work out how an account gets engagement",
+    text: `Study a Bluesky account and tell me what actually works for them. Ask me whose account if I have not said.
 
 1. get_profile for the numbers and the bio.
 2. get_author_feed with filter: posts_no_replies and limit: 100.
 3. Sort what you find by engagement relative to their follower count, not absolute likes.
 
 Then tell me: the three formats that outperform for them, how long their posts run, how often they post, what they do in the first line, and how much of their reach comes from replies versus originals. Be specific and quote real examples with their urls. If the sample is too small to support a claim, say so instead of making one.`,
-          },
-        },
-      ],
-    }),
-  );
-}
+  },
+] as const;

@@ -2,9 +2,27 @@
 
 | Component | Version | Last Updated |
 |-----------|---------|--------------|
-| bluesky-mcp-cli | 1.2.3 | 2026-10-04 |
+| bluesky-mcp-cli | 2.0.0 | 2026-10-04 |
+| @thenavidm/slipway | 0.1.5 | 2026-10-04 |
 
 ---
+
+## 2.0.0, 2026-10-04
+
+Built on [Slipway](https://github.com/thenavidm/slipway) 0.1.5. The 45 tools keep their names and arguments, and every difference below was measured against 1.2.3 before release.
+
+- **A person approves each post, thread, delete and block over MCP.** Claude Code (2.1.246 and later) shows its own prompt for each one, and a client that can show forms asks with an approval form whose one box starts unticked. Approvals are signed, bound to the exact call and work once. Where a client can do neither, the model's `confirm: true` still counts, and `BLUESKY_CONFIRM=model` makes it enough everywhere, for an agent with no person to ask. The audit log records who approved each write.
+- **A smaller tool list.** 14,220 tokens in Claude Code with every tool loaded, down from 15,880: the per-tool `$schema` line, an `execution` field and `additionalProperties: false` are gone. The last one advertised strict input while unknown keys were dropped anyway; the schema now says what happens.
+- **Exit codes follow the house contract everywhere.** An unknown command and a write in read-only mode exit 2 instead of 1, and `doctor` with nothing configured exits 10 instead of 1. 1 now means an unexpected error, and a network failure still exits 5.
+- **Cheaper through the CLI.** The same Codex task took 105,064 input tokens instead of 106,219 (median of five): `which <words>` finds a command without the full list, and a command's help shows only the flags it can use.
+- **`install <client>`** adds the server to Claude Code, Codex, Claude Desktop, Cursor, VS Code or Gemini CLI in each one's own format.
+- **Faster from the second launch.** The entry turns on Node's compile cache, so once it is warm the server answers a client in 207 ms where 1.2.3 took 235 (median of 21 runs, taking turns on one busy Mac). npx installs 4 dependencies instead of 94.
+- **`--help` lists every setting the server reads**, Slipway's own included, and restored tests keep the README and `--help` in step with the code.
+- **README fixes.** Section links that pointed one way and were labeled another now agree, the exit-code example script no longer reads the status of `!`, the four analytics tools are documented, and images load from cdn.navid.me. THIRD_PARTY_NOTICES.md lists the production dependencies' licenses.
+
+### Upgrading
+
+Node 22 or newer. Scripts keep working for success, usage errors and missing setup; a script that treated exit 1 as "unknown command" or "read-only" should read 2. Over MCP, expect an approval prompt or form for each post; a headless agent that should post with `confirm: true` alone needs `BLUESKY_CONFIRM=model`. A script that pipes JSON-RPC into the server must keep stdin open until it reads the answer: the server now stops when its input ends, as the MCP stdio binding asks. Over MCP in Codex, the same task reads 54 more input tokens out of about 108,000, from the standard `confirm` wording.
 
 ## 1.2.3, 2026-10-04
 

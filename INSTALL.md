@@ -16,7 +16,7 @@ most common routes, and they are repeated here so you never have to read both.
 
 | What you need | Why |
 |---|---|
-| **Node 20 or newer** | the only thing you have to install |
+| **Node 22 or newer** | the only thing you have to install |
 | **A Bluesky app password** | needed for anything that acts as you |
 
 Get the app password first, in [the README](README.md#2-set-up-your-account). It takes a

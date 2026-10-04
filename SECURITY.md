@@ -33,14 +33,16 @@ permanently, which is worse than no protection because it looks like protection.
 
 Three graduated mechanisms instead:
 
-**`confirm: true` on the operations that reach other people.** Posting, threads,
-deleting, blocking. A post is public the instant it lands, and deleting it does
+**Approval on the operations that reach other people.** Posting, threads,
+deleting, blocking. Over MCP a person approves each one where the client can
+ask, in Claude Code's own prompt or an approval form; elsewhere the model must
+pass `confirm: true`, and `BLUESKY_CONFIRM=model` allows that everywhere. A post is public the instant it lands, and deleting it does
 not pull it out of the feeds, caches and clients that already have it. There is
 no unsend.
 
 Likes, reposts, follows and mutes are not guarded. Each is one click to undo,
-and confirming everything trains the model to pass `confirm` reflexively, which
-is worse than not asking.
+and approving everything trains people to click yes without reading, which is
+worse than not asking.
 
 **`BLUESKY_READ_ONLY=1` removes every write from the tool list.** Not a refusal
 at call time: the tools are never registered. A model cannot call a tool it
@@ -48,7 +50,7 @@ cannot see, and cannot argue with a refusal it never receives. This is the
 setting for pointing an untrusted agent at an account.
 
 **`BLUESKY_AUDIT_LOG=<path>` records every attempted write**, allowed and
-blocked alike, one line each. The model has no tool to read or edit that file.
+blocked alike, one line each, with who approved it. The model has no tool to read or edit that file.
 
 ## Untrusted content
 
@@ -62,8 +64,9 @@ agent that can post.
 
 ## Running it over HTTP
 
-The HTTP transport has no authentication of its own. It belongs behind TLS and
-an authenticating reverse proxy.
+Over HTTP the server refuses to listen on any address but localhost without
+`BLUESKY_HTTP_TOKEN`, and then requires it as a bearer token. It still belongs
+behind TLS and a reverse proxy.
 
 Do not expose it directly. It holds a live credential for your account, and an
 open endpoint hands it to anyone who finds it.

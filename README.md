@@ -1,4 +1,4 @@
-<img src="https://cdn.navid.media/connectors/bluesky-icon.png" alt="Bluesky" width="88">
+<img src="https://cdn.navid.me/connectors/bluesky-icon.png" alt="Bluesky" width="88">
 
 # Bluesky MCP Server & CLI
 
@@ -16,9 +16,9 @@ covering everything the app does and a few things it cannot.
 There is no OAuth app to register: a handle and an app password are all you
 need, and most reads work with no credentials at all.
 
-Built and maintained by [Navid Moazzez](https://navid.me?utm_source=github&utm_medium=referral&utm_campaign=bluesky-mcp-cli&utm_content=readme).
+Built and maintained by [Navid Moazzez](https://navid.me?utm_source=github&utm_medium=referral&utm_campaign=bluesky-mcp-cli&utm_content=readme). Built on [Slipway](https://github.com/thenavidm/slipway), which turns one definition of each tool into the MCP server and the CLI.
 
-<img src="https://cdn.navid.media/repos/bluesky-mcp-cli.gif?v=3" alt="Claude Code using the Bluesky MCP server" width="520">
+<img src="https://cdn.navid.me/repos/bluesky-mcp-cli.gif" alt="Claude Code using the Bluesky MCP server" width="520">
 
 ## Two ways to use it
 
@@ -44,10 +44,10 @@ errors are JSON on stderr whichever you pick.
 One caveat worth knowing before you script against it: **reading commands return
 the tagged text**, so `--json` hands you that text as a JSON string rather than
 fields you can filter. Writes and the account commands return real objects, which
-is why the example above uses one. [Section 7](#9-reading-posts) explains the
+is why the example above uses one. [Section 9](#9-reading-posts) explains the
 format and why it is shaped that way.
 
-### MCP server, for AI agents
+### MCP server, for your AI app
 
 `bluesky-mcp` is what Claude Code, Claude Desktop, Cursor and the rest launch.
 You never run it by hand:
@@ -61,7 +61,7 @@ claude mcp add bluesky \
 
 Then just ask: _"what did the people I follow argue about while I was asleep?"_
 
-Every other client is in [section 3](#3-install).
+Every other client is in [section 3](#3-install). Each post, thread, delete and block waits for your approval in the client, as [section 7](#7-writing-safely) explains.
 
 ### Which one
 
@@ -101,11 +101,11 @@ is the tool name with dashes.
 | Notifications | `bluesky-cli get-notifications` | `get_notifications` |
 | Check your setup | `bluesky-cli doctor` | not a tool |
 
-All 45 with their arguments are in [section 4](#6-tools).
+All 45 with their arguments are in [section 6](#6-tools).
 
 ## Contents
 
-| | Section | |
+| # | Section | What it covers |
 |---|---|---|
 | 1 | [What you can ask it](#1-what-you-can-ask-it) | Real prompts, not features |
 | 2 | [Set up your account](#2-set-up-your-account) | Get your app password first |
@@ -215,7 +215,7 @@ This is a supported mode. `get_profile`, `get_author_feed`, `get_post_thread`, `
 
 ## 3. Install
 
-Node 20 or newer. You also need a Bluesky app password for anything that acts
+Node 22 or newer. You also need a Bluesky app password for anything that acts
 as you, from [section 2](#2-set-up-your-account). Reading mostly works without one.
 
 **Claude Code**
@@ -236,6 +236,8 @@ and double-click it. No config file to edit.
 npm install -g @thenavidm/bluesky-mcp-cli
 bluesky-cli
 ```
+
+`bluesky-cli install claude-code` (or `codex`, `claude-desktop`, `cursor`, `vscode`, `gemini`) adds the server to a client in its own format; add `--dry-run` to see the change first.
 
 That gives you two commands: `bluesky-mcp` is the server your AI tools launch,
 `bluesky-cli` is the one you type. They are one program, and the name only
@@ -261,11 +263,11 @@ Results go to stdout. Errors go to stderr, always as JSON, so one parse handles
 both outcomes:
 
 ```json
-{ "error": "create_post is public or irreversible, so it will not run without --confirm." }
+{"error":"create_post is public or cannot be undone, so it will not run without --confirm. About to: post 5 chars: hello. Call again with --confirm if that is what was asked for.","code":"refused","hint":"Pass --confirm only when the user asked for this exact action."}
 ```
 
 **Reads are not field-addressable yet.** A reading command returns the tagged
-text described in [section 8](#9-reading-posts), so `--json` gives you that text
+text described in [section 9](#9-reading-posts), so `--json` gives you that text
 as a JSON string rather than fields. Writes and the account commands return real
 objects. Until read handlers return data and render at the edge, `jq` is useful
 on the second kind and not the first.
@@ -275,18 +277,24 @@ on the second kind and not the first.
 | Code | Means |
 |---|---|
 | `0` | it worked |
-| `1` | it failed: no credentials, a refused write, an API error, an unknown command |
-| `2` | you typed it wrong: a missing required flag, a bad value, an unknown option |
+| `1` | an unexpected error, worth an issue |
+| `2` | you typed it wrong, or the guard refused a write: a missing or bad flag, an unknown command, a post without `--confirm` |
+| `3` | not found |
+| `4` | Bluesky rejected the credentials or the permission |
+| `5` | Bluesky failed or could not be reached |
+| `7` | rate limited |
+| `10` | nothing configured: no account for a command that needs one |
 
 So a script can tell a mistake it should fix from a failure it should retry:
 
 ```bash
-if ! bluesky-cli create-post --text "$MSG" --confirm; then
-  case $? in
-    2) echo "bad arguments, not retrying" >&2; exit 1 ;;
-    *) echo "failed, will retry" >&2 ;;
-  esac
-fi
+bluesky-cli create-post --text "$MSG" --confirm
+case $? in
+  0) ;;
+  2|4|10) echo "fix the command or the setup, not retrying" >&2; exit 1 ;;
+  5|7) echo "Bluesky failed or is busy, will retry" >&2 ;;
+  *) echo "unexpected, see the error" >&2; exit 1 ;;
+esac
 ```
 
 ## 5. Which surface, and what each costs
@@ -294,12 +302,12 @@ fi
 Both surfaces are the same program with the same 45 tools. The
 difference is when the model pays for them. Measured in Claude Code:
 
-| | MCP server | CLI |
+| Cost | MCP server | CLI |
 |---|---|---|
-| Every message, with every tool loaded | 15,900 tokens | nothing |
-| Every message, Claude Code's default | 1,100 tokens | nothing |
-| When Bluesky comes up | nothing more, or the tools it picks | 1,900 tokens for `SKILL.md`, once |
-| 20 messages with Bluesky in 1, every tool loaded | 317,000 tokens | 1,900 tokens |
+| Every message, with every tool loaded | 14,200 tokens | nothing |
+| Every message, Claude Code's default | 1,050 tokens | nothing |
+| When Bluesky comes up | nothing more, or the tools it picks | 1,980 tokens for `SKILL.md`, once |
+| 20 messages with Bluesky in 1, every tool loaded | 284,000 tokens | 1,980 tokens |
 
 Claude Code's [tool search](https://code.claude.com/docs/en/mcp#scale-with-mcp-tool-search)
 is on by default: it sends only the tool names and the server instructions,
@@ -312,26 +320,36 @@ Where the tokens go, with every tool loaded:
 
 | Part of the tool list | Share |
 |---|---|
-| JSON Schema structure: types, required lists, nesting | 55% |
-| Argument descriptions | 31% |
-| Tool descriptions | 14% |
+| JSON Schema structure: types, required lists, nesting | 60% |
+| Argument descriptions | 27% |
+| Tool descriptions | 13% |
 
 To spend less, turn the server off when you are not using it, which in Claude
 Code is the `/mcp` panel. `BLUESKY_READ_ONLY=1` takes the 15 write tools off the list, leaving 30.
 Or install the CLI and add the server on the days it earns its place.
 
-Measured on 2026-09-27 with Claude Code 2.1.257 on Claude Opus 5: one
+Measured on 2026-10-04 with Claude Code 2.1.286 on Claude Opus 5.5: one
 short prompt with and without the server connected, once with
 `ENABLE_TOOL_SEARCH=false` and once with the default, the difference read
-from the API's own usage figures. `SKILL.md` was measured the same way. Other
-apps and models count tokens a little differently.
+from the API's own usage figures. `SKILL.md` was measured the same way, and the
+shares were counted with OpenAI's o200k tokenizer. Other apps and models count
+tokens a little differently.
+
+Against 1.2.3, measured the same day: every tool loaded costs 14,220 tokens
+instead of 15,880, tool search the same, and `SKILL.md` 62 more for the approval
+rule and the full exit codes. In Codex 0.159.3 on gpt-6.1-sol, the same task,
+"get the Bluesky profile of bsky.app and reply with its display name and follower
+count", read 108,394 input tokens on 1.2.3 and 108,448 on 2.0.0 over MCP, where
+the 54 are the standard `confirm` wording, and 106,219 against 105,064 over the
+CLI (median of five), where `which profile` found the command without the full
+list.
 
 ## 6. Tools
 
 Every tool, with its arguments. Each one is also a shell command under the same
 name with dashes, so `create_post` runs as `bluesky-cli create-post`.
 
-Three things hold across all 41. Every tool that acts as you takes an optional
+Three things hold across all 45. Every tool that acts as you takes an optional
 `account`. Every tool that returns a list takes `limit` and `cursor`. Anywhere a
 post is named, an `at://` URI and a `bsky.app` link both work.
 
@@ -412,6 +430,18 @@ Every action has its inverse. `like_post` on an already-liked post returns the e
 | `get_unread_count` | none |
 | `mark_notifications_seen` | `seen_at` |
 
+### Analytics
+
+Bluesky shows no engagement numbers for your own posts. These four count likes,
+reposts, replies and quotes per post and summarize them.
+
+| Tool | Arguments |
+|---|---|
+| `rank_posts` | `actor`, `days`, `limit`, `top` |
+| `get_post_stats` | `uri` |
+| `get_engagement_summary` | `actor`, `days`, `limit` |
+| `get_posting_patterns` | `actor`, `days`, `limit`, `timezone_offset_hours` |
+
 ### Resources and prompts
 
 Three resources, `bluesky://accounts`, `bluesky://concepts`, `bluesky://output-format`, so a client can load context without spending a tool call.
@@ -422,16 +452,16 @@ Three prompts: **catch-up**, **draft-thread**, **study-account**.
 
 A post is public the instant it lands, and deleting it does not pull it out of the feeds, caches and clients that already have it. There is no unsend.
 
-So four tools refuse to run without `confirm: true`:
+So four tools need approval:
 
 - `create_post`
 - `create_thread`
 - `delete_post`
 - `block_account`
 
-The model has to set it deliberately, after reading a description that says why. That is a speed bump a careless call trips over and an intentional one clears in a single retry.
+In a terminal that is `--confirm`, which `--agent` never adds. Over MCP a person approves each call where the client can ask: Claude Code (2.1.246 and later) shows its own prompt, and a client that can show forms asks with an approval form whose one box starts unticked. Each approval is signed, bound to that exact call and works once. Where a client can do neither, the model's `confirm: true` counts, and it should pass it only when you asked for that exact post. `BLUESKY_CONFIRM=model` makes `confirm: true` enough everywhere, for an agent with no person to ask, such as a scheduled job.
 
-Likes, reposts, follows and mutes are **not** guarded. Each is one click to undo, and a confirmation on every like would only train the model to pass `confirm` reflexively, which is worse than not asking.
+Likes, reposts, follows and mutes are **not** guarded. Each is one click to undo, and an approval on every like would only train you to click yes without reading, which is worse than not asking.
 
 ### Turning writes off entirely
 
@@ -451,7 +481,7 @@ Keeps likes, follows and mutes; blocks posting, deleting and blocking.
 
 Every tool carries MCP annotations, so a client can decide what to auto-approve:
 
-| | `readOnlyHint` | `destructiveHint` | `idempotentHint` |
+| Tools | `readOnlyHint` | `destructiveHint` | `idempotentHint` |
 |---|---|---|---|
 | Reads | true | false | true |
 | `like_post`, `follow`, `mute_account` | false | false | true |
@@ -465,7 +495,7 @@ Every tool carries MCP annotations, so a client can decide what to auto-approve:
 BLUESKY_AUDIT_LOG=~/.bluesky-mcp/writes.jsonl
 ```
 
-One JSON line per attempted write, allowed and blocked alike, with a timestamp and a one-line summary of what it was about to do.
+One JSON line per attempted write, allowed and blocked alike, with a timestamp, a one-line summary of what it was about to do, and who approved it: `person`, `client` or `flag`.
 
 ### Prompt injection
 
@@ -629,11 +659,10 @@ Sessions are cached and refreshed per account independently, so having several c
 
 ```
 src/
-  index.ts              entry: stdio, --http, doctor
+  index.ts              entry: both binaries, with Node's compile cache
+  app.ts                the Slipway app: tools, settings, doctor
+  guide.ts              server instructions, resources and prompts
   config.ts             credentials, and which account acts
-  server.ts             tools, resources, prompts
-  safety.ts             the write guard and MCP annotations
-  doctor.ts             setup diagnosis
 
   api/
     client.ts           XRPC, session cache and refresh, retry, throttle
@@ -649,11 +678,11 @@ src/
     posts.ts            the tagged output format
 
   tools/
-    kit.ts              registration, guarding, pagination
+    kit.ts              the Slipway toolkit for these tools
     accounts.ts posts.ts engage.ts read.ts discover.ts graph.ts notifications.ts
 ```
 
-Two dependencies: the MCP SDK and zod. Not `@atproto/api`: the parts of it this needs are facet detection (about forty lines, taken from `detectFacets` so the segmentation cannot drift) and rich-text segmentation (about thirty), and the package pulls in the entire generated lexicon client for them.
+Two dependencies: [Slipway](https://github.com/thenavidm/slipway), which serves the tools over MCP and the CLI with one write guard, and zod. Not `@atproto/api`: the parts of it this needs are facet detection (about forty lines, taken from `detectFacets` so the segmentation cannot drift) and rich-text segmentation (about thirty), and the package pulls in the entire generated lexicon client for them.
 
 **Sessions.** One per account, cached, refreshed with `com.atproto.server.refreshSession` when the access JWT's `exp` passes, and only re-minted from the app password if the refresh itself fails. `createSession` is rate-limited hard; a server that calls it per request starts failing on a busy day.
 
@@ -665,7 +694,7 @@ Two dependencies: the MCP SDK and zod. Not `@atproto/api`: the parts of it this 
 
 Nothing is uploaded anywhere but Bluesky.
 
-| | Where |
+| What | Where |
 |---|---|
 | App password | Your environment, or your MCP client's config file |
 | Session tokens | Process memory. Never written to disk |
@@ -679,7 +708,7 @@ There is no telemetry, no analytics and no phone-home. The only hosts contacted 
 Read this before you install.
 
 - **An app password can do anything your account can.** It can post, delete, follow and block as you. Its only advantages over your real password are that it is revocable and cannot change your email or password.
-- **Posting is public and irreversible.** `confirm: true` is a speed bump, not a wall. A model that has decided to post will pass it.
+- **Posting is public and irreversible.** Over MCP a person approves each post where the client can ask. Where it cannot, or with `BLUESKY_CONFIRM=model`, `confirm: true` is a speed bump, not a wall: a model that has decided to post will pass it.
 - **Blocking severs follows permanently.** Unblocking does not restore them; both sides have to follow again.
 - **Anything you read is untrusted text.** See [prompt injection](#prompt-injection).
 - **`app.bsky.unspecced.*` is unstable by name.** `get_trends` and `search_feeds` use it. It has changed shape before and will again.
@@ -698,7 +727,11 @@ If any of that is more than you want to hand an agent, `BLUESKY_READ_ONLY=1` giv
 | `search_posts` returns 403 | It needs a session. Configure an account |
 | "Image is 2.4MB; Bluesky's limit is 1MB" | Resize it. Bluesky's own error for this says nothing useful |
 | A post published but the link is not clickable | Not this server. Check whether the URL had a scheme or a common TLD |
-| "will not run without confirm: true" | Working as intended. See [section 5](#7-writing-safely) |
+| "will not run without --confirm" | Working as intended. See [section 7](#7-writing-safely) |
+| Claude Code asks before every post | Expected: posting, threads, deletes and blocks wait for your approval |
+| `claude -p` will not post | Headless Claude Code refuses tools that need a person. Give that agent `BLUESKY_CONFIRM=model` |
+| No approval form appears | The client cannot show forms, so the model's `confirm: true` counts, and only for a post you asked for |
+| A piped request gets no answer | Stdin closed before the answer. The MCP stdio binding stops a server when its input ends; keep stdin open until you read the answer, or use the CLI |
 | Video posted but will not play | It went up as a plain blob, not through the transcoder. This server does not do that; another client might have |
 | Rate limited | Bluesky's write limits. The client backs off; a bulk operation may still exhaust them |
 
@@ -715,7 +748,11 @@ Server not appearing at all: run the command your client runs, by hand, and read
 | `BLUESKY_DEFAULT_ACCOUNT` | first configured | Which handle acts when a tool names none |
 | `BLUESKY_READ_ONLY` | `0` | Hide every write from the tool list |
 | `BLUESKY_ALLOW_DESTRUCTIVE` | `1` | `0` blocks posting, deleting and blocking |
-| `BLUESKY_AUDIT_LOG` | none | Append-only log of every attempted write |
+| `BLUESKY_AUDIT_LOG` | none | Append-only log of every attempted write, and who approved it |
+| `BLUESKY_CONFIRM` | `human` | `model` lets `confirm: true` alone approve over MCP, for an agent with no person to ask |
+| `BLUESKY_TOOLSETS` | `all` | Comma-separated toolsets to turn on |
+| `BLUESKY_SURFACE` | `full` | `search` lists three tools that find, describe and run the rest |
+| `BLUESKY_TOOL_TIMEOUT_MS` | none | Give up on any tool after this long |
 | `BLUESKY_REQUEST_TIMEOUT_MS` | `30000` | Per-request deadline |
 | `BLUESKY_MIN_REQUEST_INTERVAL_MS` | `120` | Spacing between requests |
 | `BLUESKY_MAX_RETRIES` | `3` | Retries on 429 and 5xx |
@@ -725,7 +762,8 @@ Server not appearing at all: run the command your client runs, by hand, and read
 | `BLUESKY_USER_AGENT` | `bluesky-mcp` | User-Agent sent on every request |
 | `BLUESKY_HTTP_PORT` | `8787` | For `--http` |
 | `BLUESKY_HTTP_HOST` | `127.0.0.1` | For `--http` |
-| `BLUESKY_HTTP_TOKEN` | none | Bearer token required by `--http` |
+| `BLUESKY_HTTP_TOKEN` | none | Bearer token required by `--http`; any address but localhost refuses to start without one |
+| `BLUESKY_DEBUG` | `0` | `1` prints debug lines on stderr |
 
 ## Versions
 
@@ -801,10 +839,11 @@ sits in your data directory.
 <details>
 <summary><b>Can it post without me asking?</b></summary>
 
-It posts when you ask it to. Publishing, threads, deleting and blocking all
-require the model to pass `confirm: true`, which it sets after reading a
-description explaining what cannot be undone. That is a speed bump against a
-careless call rather than a lock.
+It posts when you ask it to. Publishing, threads, deleting and blocking wait for
+your approval: Claude Code shows its own prompt for each one, and a client that
+can show forms asks with one. Where a client can do neither, the model's
+`confirm: true` counts, which is a speed bump against a careless call rather
+than a lock.
 
 If you want a server that cannot write at all, set `BLUESKY_READ_ONLY=1` and the
 write tools are never registered, so the model cannot see or call them.
@@ -814,7 +853,7 @@ write tools are never registered, so the model cannot see or call them.
 <details>
 <summary><b>Can it delete something by accident?</b></summary>
 
-Deleting a post needs `confirm: true`, and it is worth knowing that a delete on
+Deleting a post needs your approval, and it is worth knowing that a delete on
 Bluesky does not pull the post out of feeds, caches and clients that already
 have it. There is no unsend. Likes, reposts and follows are not guarded, because
 each is one click to undo.
@@ -888,7 +927,8 @@ If this is useful, star the repo and come say hi on [X](https://x.com/thenavidm)
 
 | Library | License | What it does |
 |---|---|---|
-| [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) | MIT | The MCP server and transports |
+| [Slipway](https://github.com/thenavidm/slipway) | Apache-2.0 | The MCP server and the CLI from one definition of each tool, with the write guard |
+| [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) | Apache-2.0 | The MCP protocol and transports, through Slipway |
 | [zod](https://github.com/colinhacks/zod) | MIT | Tool argument schemas and validation |
 
 Facet detection regexes are taken from [`@atproto/api`](https://github.com/bluesky-social/atproto) (MIT) so that segmentation here matches the official client exactly. One edit: the URL pattern's named capture group is unnamed and read by index instead, because a named group needs an ES2018 target and these files also compile inside an app that targets ES2017. Same pattern, same groups, same matches. The package itself is not a dependency.

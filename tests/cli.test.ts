@@ -1,166 +1,84 @@
 /**
- * The CLI adapter.
+ * The two surfaces, now that Slipway builds both from ALL_TOOLS.
  *
- * What matters here is that the shell surface is derived from the tool specs
- * rather than described a second time, so the tests that count are the ones
- * asserting parity with ALL_TOOLS and the ones covering the argv shapes a
- * person actually types.
+ * Parsing, help and exit codes are Slipway's and tested there. What matters
+ * here is that this repo's tools arrive on both surfaces intact, with the
+ * guard behaving as the README promises.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
-import { flagsFor, parseArgs, isCliCommand, selectFields } from "../src/cli.js";
+import { checkApp, cli, connect } from "@thenavidm/slipway/testing";
+import { app } from "../src/app.js";
 import { ALL_TOOLS } from "../src/tools/index.js";
 
-describe("flagsFor", () => {
-  it("derives a flag per schema key, kebab-cased", () => {
-    const flags = flagsFor({ reply_to: z.string().optional() });
-    expect(flags[0]).toMatchObject({ key: "reply_to", flag: "--reply-to", kind: "string" });
+const env = {};
+
+describe("Bluesky on Slipway", () => {
+  it("offers every tool as a command and over MCP, under the same names", async () => {
+    const list = await cli(app, [], { env });
+    for (const tool of ALL_TOOLS) expect(list.stdout).toContain(tool.command);
+
+    const mcp = await connect(app, { env });
+    const names = (await mcp.listTools()).map((tool) => tool.name).sort();
+    await mcp.close();
+    expect(names).toEqual(ALL_TOOLS.map((tool) => tool.name).sort());
   });
 
-  it("reads required from the absence of .optional()", () => {
-    const flags = flagsFor({ text: z.string(), account: z.string().optional() });
-    expect(flags.find((f) => f.key === "text")?.required).toBe(true);
-    expect(flags.find((f) => f.key === "account")?.required).toBe(false);
+  it("refuses to post without --confirm, before anything reaches the network", async () => {
+    const run = await cli(app, ["create-post", "--text", "hello"], { env });
+    expect(run.code).toBe(2);
+    expect(JSON.parse(run.stderr).code).toBe("refused");
+    expect(run.stderr).toContain("--confirm");
   });
 
-  it("carries .describe() through as help", () => {
-    const flags = flagsFor({ text: z.string().describe("The post body.") });
-    expect(flags[0]?.help).toBe("The post body.");
+  it("hides every write when BLUESKY_READ_ONLY is set", async () => {
+    const mcp = await connect(app, { env: { BLUESKY_READ_ONLY: "1" } });
+    const tools = await mcp.listTools();
+    await mcp.close();
+    expect(tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
   });
 
-  it("finds the description whichever side of .optional() it was chained", () => {
-    const outer = flagsFor({ a: z.string().optional().describe("outer") });
-    const inner = flagsFor({ b: z.string().describe("inner").optional() });
-    expect(outer[0]?.help).toBe("outer");
-    expect(inner[0]?.help).toBe("inner");
+  it("reports a missing argument by its flag and exits 2", async () => {
+    const run = await cli(app, ["get-profile"], { env });
+    expect(run.code).toBe(2);
+    expect(JSON.parse(run.stderr).error).toContain("--actor");
   });
 
-  it("exposes an enum's values as choices", () => {
-    const flags = flagsFor({ reply_control: z.enum(["everyone", "nobody"]).optional() });
-    expect(flags[0]).toMatchObject({ kind: "enum", choices: ["everyone", "nobody"] });
-  });
-
-  it("marks a scalar array repeatable and an object array json", () => {
-    const flags = flagsFor({
-      langs: z.array(z.string()).optional(),
-      images: z.array(z.object({ url: z.string() })).optional(),
-    });
-    expect(flags.find((f) => f.key === "langs")).toMatchObject({ kind: "string", repeatable: true });
-    expect(flags.find((f) => f.key === "images")).toMatchObject({ kind: "json", repeatable: true });
-  });
-});
-
-describe("parseArgs", () => {
-  const flags = flagsFor({
-    text: z.string(),
-    limit: z.number().optional(),
-    confirm: z.boolean().optional(),
-    langs: z.array(z.string()).optional(),
-    link: z.object({ uri: z.string() }).optional(),
-    reply_control: z.enum(["everyone", "nobody"]).optional(),
-  });
-
-  it("accepts --flag value and --flag=value alike", () => {
-    expect(parseArgs(["--text", "hi"], flags)).toEqual({ text: "hi" });
-    expect(parseArgs(["--text=hi"], flags)).toEqual({ text: "hi" });
-  });
-
-  it("accepts the underscore spelling of a flag", () => {
-    expect(parseArgs(["--reply_control", "nobody"], flags)).toEqual({ reply_control: "nobody" });
-  });
-
-  it("treats a boolean as a bare switch", () => {
-    expect(parseArgs(["--text", "hi", "--confirm"], flags)).toEqual({ text: "hi", confirm: true });
-    expect(parseArgs(["--confirm=false"], flags)).toEqual({ confirm: false });
-  });
-
-  it("coerces numbers, and refuses ones that are not", () => {
-    expect(parseArgs(["--limit", "25"], flags)).toEqual({ limit: 25 });
-    expect(() => parseArgs(["--limit", "many"], flags)).toThrow(/expects a number/);
-  });
-
-  it("parses a json flag, and refuses malformed json", () => {
-    expect(parseArgs(['--link={"uri":"https://x.com"}'], flags)).toEqual({
-      link: { uri: "https://x.com" },
-    });
-    expect(() => parseArgs(["--link", "{oops"], flags)).toThrow(/expects JSON/);
-  });
-
-  it("collects a repeatable flag into an array", () => {
-    expect(parseArgs(["--langs", "en", "--langs", "sv"], flags)).toEqual({ langs: ["en", "sv"] });
-  });
-
-  it("checks an enum against its choices", () => {
-    expect(() => parseArgs(["--reply-control", "friends"], flags)).toThrow(/expects one of/);
-  });
-
-  it("fills the first required flag from a bare argument", () => {
-    expect(parseArgs(["hello"], flags)).toEqual({ text: "hello" });
-  });
-
-  it("wraps a bare argument when the required flag is repeatable", () => {
-    const repeatable = flagsFor({ actors: z.array(z.string()) });
-    expect(parseArgs(["bsky.app"], repeatable)).toEqual({ actors: ["bsky.app"] });
-  });
-
-  it("refuses an unknown option rather than dropping it", () => {
-    expect(() => parseArgs(["--nope", "x"], flags)).toThrow(/Unknown option/);
-  });
-
-  it("refuses a second bare argument", () => {
-    expect(() => parseArgs(["one", "two"], flags)).toThrow(/Unexpected argument/);
-  });
-});
-
-describe("parity with the MCP surface", () => {
-  it("routes every tool name, in both spellings", () => {
-    for (const tool of ALL_TOOLS) {
-      expect(isCliCommand([tool.name])).toBe(true);
-      expect(isCliCommand([tool.name.replace(/_/g, "-")])).toBe(true);
-    }
-  });
-
-  it("builds flags for every tool without throwing", () => {
-    for (const tool of ALL_TOOLS) {
-      expect(() => flagsFor(tool.schema)).not.toThrow();
-    }
-  });
-
-  it("gives every schema key a flag", () => {
-    for (const tool of ALL_TOOLS) {
-      expect(flagsFor(tool.schema)).toHaveLength(Object.keys(tool.schema).length);
-    }
-  });
-
-  it("leaves the server's own flags alone", () => {
-    expect(isCliCommand(["--http"])).toBe(false);
-    expect(isCliCommand(["--version"])).toBe(false);
-    expect(isCliCommand([])).toBe(false);
+  it("passes slipway check", async () => {
+    const report = await checkApp(app, { env });
+    expect(report.findings.filter((finding) => finding.level === "error")).toEqual([]);
   });
 });
 
 describe("documentation stays in step with the code", () => {
   const read = (p: string): string => readFileSync(new URL(p, import.meta.url), "utf-8");
   const names = (text: string): Set<string> => new Set(text.match(/BLUESKY_[A-Z_]+/g) ?? []);
+  const source = (dir: string): string =>
+    readdirSync(new URL(dir, import.meta.url), { withFileTypes: true })
+      .map((entry) => (entry.isDirectory() ? source(`${dir}${entry.name}/`) : entry.name.endsWith(".ts") ? read(`${dir}${entry.name}`) : ""))
+      .join("\n");
+
+  /** Every variable the server reads: this repo's code, and Slipway's as agent-context lists them. */
+  const used = async (): Promise<Set<string>> => {
+    const context = JSON.parse((await cli(app, ["agent-context"], { env })).stdout);
+    return new Set([...names(source("../src/")), ...context.settings.map((setting: { env: string }) => setting.env)]);
+  };
 
   /**
    * Two variables shipped undocumented and five never reached `--help`, which is
    * the kind of drift nobody notices because both sides look complete on their own.
    */
-  it("documents every environment variable the code reads", () => {
-    const used = names(["config.ts", "transport/http.ts"].map((f) => read(`../src/${f}`)).join("\n"));
+  it("documents every environment variable the server reads", async () => {
     const documented = names(read("../README.md"));
-    expect([...used].filter((v) => !documented.has(v))).toEqual([]);
+    expect([...(await used())].filter((v) => !documented.has(v))).toEqual([]);
   });
 
-  it("lists every environment variable in --help", () => {
-    const used = names(["config.ts", "transport/http.ts"].map((f) => read(`../src/${f}`)).join("\n"));
-    const helped = names(read("../src/index.ts"));
+  it("lists every environment variable in --help", async () => {
+    const help = (await cli(app, ["--help"], { env })).stdout;
     // The help groups the three HTTP ones as `BLUESKY_HTTP_PORT / _HOST / _TOKEN`.
     const shorthand = new Set(["BLUESKY_HTTP_HOST", "BLUESKY_HTTP_TOKEN"]);
-    expect([...used].filter((v) => !helped.has(v) && !shorthand.has(v))).toEqual([]);
+    expect([...(await used())].filter((v) => !help.includes(v) && !shorthand.has(v))).toEqual([]);
   });
 
   /**
@@ -181,32 +99,5 @@ describe("documentation stays in step with the code", () => {
       .map((m) => m[1] as string)
       .filter((a) => !slugs.has(a));
     expect(dead).toEqual([]);
-  });
-});
-
-/**
- * Two paths under one head used to overwrite each other, so
- * `--select posts.uri,posts.text` quietly returned only the text. Silent data
- * loss in a flag whose whole purpose is choosing what you keep.
- */
-describe("--select keeps every path, not the last one", () => {
-  it("keeps both fields when two paths share a head", () => {
-    const data = { posts: [{ uri: "at://1", text: "hello", likeCount: 5 }] };
-    expect(selectFields(data, ["posts.uri", "posts.text"])).toEqual({
-      posts: [{ uri: "at://1", text: "hello" }],
-    });
-  });
-
-  it("groups at every depth", () => {
-    expect(selectFields({ a: { b: { c: 1, d: 2, e: 3 } } }, ["a.b.c", "a.b.e"])).toEqual({
-      a: { b: { c: 1, e: 3 } },
-    });
-  });
-
-  it("mixes a scalar with nested paths", () => {
-    expect(selectFields({ x: 1, y: { z: 2, w: 3 } }, ["x", "y.z", "y.w"])).toEqual({
-      x: 1,
-      y: { z: 2, w: 3 },
-    });
   });
 });

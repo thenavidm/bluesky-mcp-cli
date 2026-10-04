@@ -29,7 +29,7 @@ describe("analytics tools", () => {
    */
   it("take an actor, so they work on any public account", () => {
     for (const name of ["rank_posts", "get_engagement_summary", "get_posting_patterns"]) {
-      expect(Object.keys(ALL_TOOLS.find((t) => t.name === name)?.schema ?? {})).toContain("actor");
+      expect(Object.keys((ALL_TOOLS.find((t) => t.name === name)?.jsonSchema.properties as object) ?? {})).toContain("actor");
     }
   });
 });
