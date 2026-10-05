@@ -763,6 +763,7 @@ Server not appearing at all: run the command your client runs, by hand, and read
 | `BLUESKY_HTTP_PORT` | `8787` | For `--http` |
 | `BLUESKY_HTTP_HOST` | `127.0.0.1` | For `--http` |
 | `BLUESKY_HTTP_TOKEN` | none | Bearer token required by `--http`; any address but localhost refuses to start without one |
+| `BLUESKY_HTTP_ALLOWED_ORIGINS` | none | Comma-separated browser origins allowed to connect to `--http`; a page from any other site is refused |
 | `BLUESKY_DEBUG` | `0` | `1` prints debug lines on stderr |
 
 ## Versions
