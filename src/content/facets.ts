@@ -12,7 +12,7 @@
  * official client would segment it. What is *not* copied is the `tlds` package:
  * a mention is validated by resolving it, which is a check the TLD list only
  * approximates, and a bare domain is checked against a bundled common-TLD list
- * so "see navid.me" links while "e.g. this" does not.
+ * so "see example.com" links while "e.g. this" does not.
  *
  * Offsets are UTF-8 byte positions. An emoji before a link shifts every offset
  * after it, which is why nothing here indexes the JS string directly.
