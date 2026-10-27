@@ -23,7 +23,13 @@ change your password and issue an app password instead.
 live credential, so treat that directory the way you would treat a password
 manager file.
 
-Nothing leaves your machine except calls to your PDS. No telemetry.
+Nothing leaves your machine except calls to your PDS, and to Bluesky's video
+service when you post a video. No telemetry.
+
+**A video file you name** in `video_path` is read from disk and streamed to the
+video service; nothing else on the machine is read, and no copy is kept. Over
+MCP a model can name any video file this user account can read, so the path is
+worth a glance in the approval prompt for `create_post`, which names the file.
 
 ## Write safety
 

@@ -2,9 +2,9 @@
   "manifest_version": "0.2",
   "name": "bluesky",
   "display_name": "Bluesky",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Bluesky MCP server for Claude Code and AI agents. 45 tools for posting, threads, replies, timeline, search, custom feeds, lists, notifications and the social graph.",
-  "long_description": "Connects Claude to Bluesky over the AT Protocol.\n\nThere is no OAuth app to register. A handle and an app password from bsky.app/settings/app-passwords are the setup, and most reading tools work with no credentials at all.\n\nPosting is public the moment it runs, so create_post, create_thread, delete_post and block_account refuse to run without an explicit confirmation.",
+  "long_description": "Connects Claude to Bluesky over the AT Protocol.\n\nThere is no OAuth app to register. A handle and an app password from bsky.app/settings/app-passwords are the setup, and most reading tools work with no credentials at all.\n\nA post can carry a video straight from a file on this computer, sent through Bluesky's video service with its aspect ratio read from the file.\n\nPosting is public the moment it runs, so create_post, create_thread, delete_post and block_account refuse to run without an explicit confirmation.",
   "author": {
     "name": "Navid Moazzez",
     "url": "https://navid.me"

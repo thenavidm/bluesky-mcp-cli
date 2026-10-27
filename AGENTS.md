@@ -12,7 +12,7 @@ taken here gets copied into every server built afterwards.
 src/app.ts      the Slipway app: tools, settings, doctor. Slipway owns both surfaces, the guard and the audit log
 src/guide.ts    server instructions, resources and prompts
 src/api/        client, errors, identity resolution
-src/content/    facets, media, text. The AT Protocol specifics
+src/content/    facets, media, mp4, text. The AT Protocol specifics
 src/tools/      one module per group, registered in tools/index.ts
 ```
 

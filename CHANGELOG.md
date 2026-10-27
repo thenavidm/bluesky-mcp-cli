@@ -2,10 +2,23 @@
 
 | Component | Version | Last Updated |
 |-----------|---------|--------------|
-| bluesky-mcp-cli | 2.0.1 | 2026-10-05 |
+| bluesky-mcp-cli | 2.1.0 | 2026-10-27 |
 | @thenavidm/slipway | 0.1.17 | 2026-10-05 |
 
 ---
+
+## 2.1.0, 2026-10-27
+
+A post's video from a file on this machine. Still 45 tools.
+
+- **`create_post` takes `video_path`**, a video file on the machine running the server, beside `video_url`, which only took a public URL or a data: URI. MP4, MOV, WebM or MPEG, the types Bluesky's own app sends, checked before anything is sent. The file streams from disk rather than sitting in memory, and the refusal and the approval name it.
+- **The upload follows [Bluesky's documented flow](https://bsky.network/docs/about-bluesky-content/video).** The upload token is now a 30-minute service-auth token addressed to the account's own PDS and scoped to `com.atproto.repo.uploadBlob`, as the docs and Bluesky's own app do, because the video service uses it to store the processed video on your PDS. 2.0 addressed it to the video service and scoped it to `app.bsky.video.uploadVideo`. The PDS comes from the DID document the session carries, then the PLC directory or the did:web host, then the service signed in to.
+- **A video the service has already processed is reused.** The docs say to look for the blob whatever the job's state, since a repeat upload comes back as `already_exists` with the earlier blob; 2.0 failed on it. The upload's answer is read whether the job comes wrapped in `jobStatus`, as the lexicon says, or bare, as the service sends it.
+- **The embed carries the video's aspect ratio**, read from the MP4 or MOV header, with a phone's rotated frames turned upright, so a 9:16 video shows upright. [`app.bsky.embed.video`](https://github.com/bluesky-social/bsky/blob/main/lexicons/app/bsky/embed/video.json) takes it as an [`aspectRatio`](https://github.com/bluesky-social/bsky/blob/main/lexicons/app/bsky/embed/defs.json) of width and height; without it Bluesky guesses. This applies to `video_url` too.
+- **Up to 300MB.** The lexicon's ceiling: "May be up to 300mb, formerly limited to 100mb" (`maxSize` 300000000). 2.0 stopped at 100MB. A video larger than what `getUploadLimits` says is left for today is refused before it is sent, and the refusal for a spent allowance says Bluesky-hosted accounts must have verified their email.
+- **The upload no longer runs into the 30-second request timeout.** It is one request for the whole file, which the request deadline and its retries were never meant for; it now runs until it is done or the call is canceled.
+- **`create_post` says what it does in Bluesky's words** when it refuses or asks for approval: it publishes a post anyone can see the moment it runs, and deleting it later does not pull it out of feeds that already have it. It said Slipway's default.
+- **The package description said 41 tools.** The server has 45.
 
 ## 2.0.1, 2026-10-05
 

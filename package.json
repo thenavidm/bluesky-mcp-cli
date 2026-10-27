@@ -1,7 +1,7 @@
 {
   "name": "@thenavidm/bluesky-mcp-cli",
-  "version": "2.0.1",
-  "description": "Bluesky MCP server and CLI for Claude Code and AI agents. 41 tools for posting, threads, replies, timeline, search, custom feeds, lists, notifications and the social graph.",
+  "version": "2.1.0",
+  "description": "Bluesky MCP server and CLI for Claude Code and AI agents. 45 tools for posting, video from a file, threads, replies, timeline, search, custom feeds, lists, notifications and the social graph.",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {

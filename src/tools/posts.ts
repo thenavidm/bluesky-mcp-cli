@@ -14,13 +14,14 @@
 
 import { z } from "zod";
 import { buildFacets } from "../content/facets.js";
-import { uploadImage, uploadVideo, type BlobRef } from "../content/media.js";
+import { uploadImage, uploadVideo } from "../content/media.js";
 import { assertPostLength, graphemeLength } from "../content/text.js";
 import { parseAtUri, resolvePostUri, strongRef, webUrl, type StrongRef } from "../api/identity.js";
 import { renderThread } from "../format/posts.js";
 import type { Account } from "../config.js";
 import { ValidationError } from "../api/errors.js";
 import { accountArg, clamp, confirmArg, defineTool, type ToolContext, type AnyToolSpec } from "./kit.js";
+import type { ToolContext as RunContext } from "@thenavidm/slipway";
 
 const imageSchema = z.object({
   url: z.string().describe("Public http(s) URL, or a data: URI. Must be under 1MB."),
@@ -48,6 +49,7 @@ type PostArgs = {
   text: string;
   images?: { url: string; alt: string }[];
   video_url?: string;
+  video_path?: string;
   video_alt?: string;
   link?: { uri: string; title: string; description: string; thumb_url?: string };
   quote?: string;
@@ -79,10 +81,19 @@ async function buildRecord(
   const facets = await buildFacets(ctx.client, args.text);
   if (facets.length) record.facets = facets;
 
-  const embedCount = [args.images?.length, args.video_url, args.link, args.quote].filter(
+  if (args.video_url && args.video_path) {
+    throw new ValidationError(
+      "Pass video_url or video_path, not both.",
+      400,
+      "(local)",
+      "InvalidRequest",
+    );
+  }
+  const video = args.video_url || args.video_path;
+  const embedCount = [args.images?.length, video, args.link, args.quote].filter(
     Boolean,
   ).length;
-  if (args.images?.length && args.video_url) {
+  if (args.images?.length && video) {
     throw new ValidationError(
       "A post carries either images or a video, not both.",
       400,
@@ -113,12 +124,20 @@ async function buildRecord(
       }),
     );
     media = { $type: "app.bsky.embed.images", images: uploaded };
-  } else if (args.video_url) {
-    const blob: BlobRef = await uploadVideo(ctx.client, chosen, ctx.config, args.video_url);
+  } else if (video) {
+    const uploaded = await uploadVideo(
+      ctx.client,
+      chosen,
+      ctx.config,
+      args.video_path ? { path: args.video_path } : { url: args.video_url },
+      { signal: (ctx as Partial<RunContext<ToolContext>>).signal },
+    );
     media = {
       $type: "app.bsky.embed.video",
-      video: blob,
+      video: uploaded.blob,
       ...(args.video_alt ? { alt: args.video_alt } : {}),
+      // Without it Bluesky guesses, and a 9:16 video is shown in a box of the wrong shape.
+      ...(uploaded.aspectRatio ? { aspectRatio: uploaded.aspectRatio } : {}),
     };
   } else if (args.link) {
     const thumb = args.link.thumb_url
@@ -256,7 +275,7 @@ const createPost = defineTool({
   name: "create_post",
   title: "Post to Bluesky",
   description:
-    "Publish a post. Handles plain text, up to four images with alt text, a video, a link card, a quote, and replies. URLs, #hashtags and @mentions in the text are turned into real links automatically. You do not need to format them. The limit is 300 characters; for anything longer use create_thread. Public the moment it runs, so it needs confirm: true.",
+    "Publish a post. Handles plain text, up to four images with alt text, a video from a URL or a file on this machine, a link card, a quote, and replies. URLs, #hashtags and @mentions in the text are turned into real links automatically. You do not need to format them. The limit is 300 characters; for anything longer use create_thread. Public the moment it runs, so it needs confirm: true.",
   schema: {
     text: z
       .string()
@@ -266,7 +285,11 @@ const createPost = defineTool({
     video_url: z
       .string()
       .optional()
-      .describe("Public URL of an MP4. Uploaded through Bluesky's transcoder, which takes a few seconds."),
+      .describe("Public URL of a video, or a data: URI. Sent through Bluesky's video service, which takes a few seconds. Pass this or video_path."),
+    video_path: z
+      .string()
+      .optional()
+      .describe("A video file on the machine running this server: MP4, MOV, WebM or MPEG, up to 300MB. Its aspect ratio is read from the file, so a 9:16 video shows upright. Pass this or video_url."),
     video_alt: z.string().optional().describe("Alt text for the video."),
     link: linkSchema.optional().describe("A link preview card."),
     quote: z
@@ -296,7 +319,10 @@ const createPost = defineTool({
   },
   risk: "destructive",
   public: true,
-  summary: (a) => `post ${graphemeLength(a.text)} chars: ${a.text.slice(0, 80)}`,
+  consequence:
+    "publishes a post on your Bluesky account that anyone can see the moment it runs, and deleting it later does not pull it out of feeds that already have it",
+  summary: (a) =>
+    `post ${graphemeLength(a.text)} chars${a.video_path ? ` with ${a.video_path.split(/[\\/]/).pop()}` : ""}: ${a.text.slice(0, 80)}`,
   handler: async (args, ctx) => {
     const chosen = ctx.account(args.account);
     const session = await ctx.client.session(chosen);

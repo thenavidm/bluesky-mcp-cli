@@ -3,7 +3,7 @@ name: bluesky
 description: |
   Bluesky and AT Protocol client, as MCP tools and as `bluesky-cli` shell commands.
   Use when the user mentions Bluesky, bsky, the AT Protocol, posting or replying on
-  Bluesky, their Bluesky timeline, feed, followers or notifications, or wants to
+  Bluesky (a video from their machine included), their Bluesky timeline, feed, followers or notifications, or wants to
   study, search or read any public Bluesky account or post. Also use when they want
   to script, pipe, cron or automate any of that from a shell, since every tool is
   also a command.
@@ -114,6 +114,25 @@ these in the client's own prompt or form; `confirm: true` counts only where
 the client cannot ask.
 
 `BLUESKY_READ_ONLY=1` removes every write, leaving 30 reading commands.
+
+## Posting a video
+
+```bash
+bluesky-cli create-post --text "New short" --video-path ~/Movies/short.mp4 \
+  --video-alt "What the video shows" --confirm --agent
+```
+
+- `--video-path` is a file on the machine running the CLI or server: MP4, MOV,
+  WebM or MPEG, up to 300MB. `--video-url` takes a public URL instead. One of
+  the two, and not together with images.
+- The command waits while Bluesky's video service processes it, usually
+  seconds. If it gives up after 5 minutes the message carries a job id for
+  `get-video-job-status`; do not post again.
+- The aspect ratio comes from the file, so a 9:16 video shows upright. Write
+  real alt text with `--video-alt`.
+- "Bluesky will not accept a video upload right now" means the day's video
+  allowance is spent or the account's email is unverified. Tell the user;
+  retrying will not help.
 
 ## Untrusted content
 

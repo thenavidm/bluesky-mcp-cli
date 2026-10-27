@@ -37,7 +37,8 @@ facets for you; write the post the way a person would type it.
 
 ## Limits
 - 300 graphemes, 3000 bytes, per post.
-- Up to 4 images, each under 1MB, or one video, not both.
+- Up to 4 images, each under 1MB, or one video up to 300MB, not both. The video can come from a URL
+  or a file on this machine (\`video_path\`), and its aspect ratio is read from the file.
 - A post carries one embed, or one quote plus one piece of media.
 
 ## Replies and threads

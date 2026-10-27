@@ -59,6 +59,8 @@ export type ToolSpec<S extends Shape> = {
   risk: Risk;
   /** True when the effect is visible to anyone but you. */
   public?: boolean;
+  /** What a confirmed call does, in Bluesky's words, for the refusal and the approval form. */
+  consequence?: string;
   /** True when calling twice has the same effect as calling once. */
   idempotent?: boolean;
   handler: (args: z.infer<z.ZodObject<S>>, ctx: ToolContext) => Promise<unknown>;
@@ -76,6 +78,7 @@ export function defineTool<S extends Shape>(spec: ToolSpec<S>): Tool<ToolContext
     description: spec.description,
     input: z.object(shape),
     risk: spec.risk,
+    ...(spec.consequence ? { consequence: spec.consequence } : {}),
     ...(spec.idempotent !== undefined ? { idempotent: spec.idempotent } : {}),
     ...(spec.summary ? { summary: spec.summary as (args: Record<string, unknown>) => string } : {}),
     handler: spec.handler as (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>,

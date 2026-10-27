@@ -32,7 +32,17 @@ export type Session = {
   service: string;
   /** Unix ms when the access JWT expires, read from its `exp` claim. */
   expiresAt: number;
+  /** The account's own PDS, from the DID document the session carried. Not the entryway, such as bsky.social. */
+  pdsUrl?: string;
 };
+
+/** The `#atproto_pds` endpoint of a DID document, if it names one. */
+export function pdsFromDidDoc(doc: unknown): string | undefined {
+  const services = (doc as { service?: { id?: string; type?: string; serviceEndpoint?: unknown }[] } | undefined)?.service;
+  if (!Array.isArray(services)) return undefined;
+  const pds = services.find((s) => typeof s?.id === "string" && s.id.endsWith("#atproto_pds"));
+  return typeof pds?.serviceEndpoint === "string" ? pds.serviceEndpoint.replace(/\/+$/, "") : undefined;
+}
 
 type CallInit = {
   method?: "GET" | "POST";
@@ -117,8 +127,9 @@ export class BlueskyClient {
       method: "POST",
       service: account.service,
       body: { identifier: account.handle, password: account.appPassword },
-    })) as { accessJwt: string; refreshJwt: string; did: string; handle: string };
+    })) as { accessJwt: string; refreshJwt: string; did: string; handle: string; didDoc?: unknown };
 
+    const pdsUrl = pdsFromDidDoc(data.didDoc);
     return {
       accessJwt: data.accessJwt,
       refreshJwt: data.refreshJwt,
@@ -126,6 +137,7 @@ export class BlueskyClient {
       handle: data.handle,
       service: account.service,
       expiresAt: expiryOf(data.accessJwt) || Date.now() + 90 * 60_000,
+      ...(pdsUrl ? { pdsUrl } : {}),
     };
   }
 
@@ -134,8 +146,9 @@ export class BlueskyClient {
       method: "POST",
       service: session.service,
       token: session.refreshJwt,
-    })) as { accessJwt: string; refreshJwt: string; did: string; handle: string };
+    })) as { accessJwt: string; refreshJwt: string; did: string; handle: string; didDoc?: unknown };
 
+    const pdsUrl = pdsFromDidDoc(data.didDoc) ?? session.pdsUrl;
     return {
       ...session,
       accessJwt: data.accessJwt,
@@ -143,7 +156,38 @@ export class BlueskyClient {
       did: data.did,
       handle: data.handle,
       expiresAt: expiryOf(data.accessJwt) || Date.now() + 90 * 60_000,
+      ...(pdsUrl ? { pdsUrl } : {}),
     };
+  }
+
+  /**
+   * The account's own PDS. A session from bsky.social names it in the DID
+   * document it carries; failing that, the DID document is read from the PLC
+   * directory or the did:web host, and failing that, the service signed in to.
+   * The video service's upload token is addressed to this, not to bsky.social.
+   */
+  async pdsUrl(account: Account): Promise<string> {
+    const session = await this.session(account);
+    if (session.pdsUrl) return session.pdsUrl;
+    try {
+      const did = session.did;
+      const url = did.startsWith("did:plc:")
+        ? `https://plc.directory/${did}`
+        : did.startsWith("did:web:")
+          ? `https://${decodeURIComponent(did.slice("did:web:".length))}/.well-known/did.json`
+          : undefined;
+      if (url) {
+        const response = await fetch(url, { headers: { "user-agent": this.config.userAgent } });
+        const found = response.ok ? pdsFromDidDoc(await response.json()) : undefined;
+        if (found) {
+          session.pdsUrl = found;
+          return found;
+        }
+      }
+    } catch {
+      // Fall back to the service the account signs in to, which is its PDS when it is self-hosted.
+    }
+    return session.service;
   }
 
   /**

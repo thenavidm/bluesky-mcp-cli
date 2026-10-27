@@ -33,6 +33,8 @@ bluesky-cli get-timeline --limit 50             # your home timeline
 bluesky-cli get-author-feed --actor navid.me    # someone's posts
 bluesky-cli search-posts "model context protocol"
 bluesky-cli create-post --text "Shipped." --confirm
+bluesky-cli create-post --text "New short" --video-path ~/Movies/short.mp4 \
+  --video-alt "A 30-second walkthrough" --confirm      # a video from your disk
 bluesky-cli list-accounts --json | jq -r '.accounts[].handle'
 bluesky-cli <command> --help                    # what any command takes
 ```
@@ -126,6 +128,7 @@ All 45 with their arguments are in [section 6](#6-tools).
 ## 1. What you can ask it
 
 - Post this, and put the link in a card rather than as bare text.
+- Post ~/Movies/short.mp4 with this caption and alt text.
 - Turn these notes into a thread. Show me the draft first.
 - What did my timeline talk about in the last 12 hours?
 - Read the replies to my Tuesday post and tell me which ones deserve an answer.
@@ -300,7 +303,8 @@ esac
 ## 5. Which surface, and what each costs
 
 Both surfaces are the same program with the same 45 tools. The
-difference is when the model pays for them. Measured in Claude Code:
+difference is when the model pays for them. Measured in Claude Code on 2.0;
+2.1.0's longer `create_post` has not been measured yet:
 
 | Cost | MCP server | CLI |
 |---|---|---|
@@ -365,7 +369,7 @@ post is named, an `at://` URI and a `bsky.app` link both work.
 
 | Tool | Arguments |
 |---|---|
-| `create_post` | `text`, `images[]`, `video_url`, `video_alt`, `link`, `quote`, `reply_to`, `langs`, `tags`, `reply_control`, `allow_quotes`, `confirm` |
+| `create_post` | `text`, `images[]`, `video_url`, `video_path`, `video_alt`, `link`, `quote`, `reply_to`, `langs`, `tags`, `reply_control`, `allow_quotes`, `confirm` |
 | `create_thread` | `posts[]`, `images[]`, `link`, `quote`, `reply_to`, `langs`, `reply_control`, `confirm` |
 | `delete_post` | `uri`, `confirm` |
 | `get_post_thread` | `uri`, `depth`, `parent_height` |
@@ -526,7 +530,8 @@ Bluesky's cap is 300 **graphemes** and 3,000 **bytes**. Those are different from
 ### Media
 
 - **Images:** up to four, each under 1MB, each with `alt`. Dimensions are read from the file header and sent as an aspect ratio, so a tall screenshot is not letterboxed into a square.
-- **Video:** one MP4, uploaded through Bluesky's transcoding service and polled to completion. Not a plain blob upload. That publishes a post that plays for nobody.
+- **Video:** one, from a public URL or a data: URI (`video_url`), or a file on this machine (`video_path`): MP4, MOV, WebM or MPEG, up to 300MB, the ceiling [`app.bsky.embed.video`](https://github.com/bluesky-social/bsky/blob/main/lexicons/app/bsky/embed/video.json) sets ("May be up to 300mb, formerly limited to 100mb"). It goes through Bluesky's video service the way [Bluesky's docs](https://bsky.network/docs/about-bluesky-content/video) recommend: `getUploadLimits` first, then a 30-minute service-auth token addressed to your own PDS and scoped to `com.atproto.repo.uploadBlob`, the bytes to `app.bsky.video.uploadVideo`, and `getJobStatus` until the processed blob comes back, so the post never shows a missing video. A file streams from disk rather than sitting in memory.
+- **Video aspect ratio:** read from the file's own header and sent as the embed's `aspectRatio` (a [`app.bsky.embed.defs#aspectRatio`](https://github.com/bluesky-social/bsky/blob/main/lexicons/app/bsky/embed/defs.json), width and height), so a 9:16 video shows upright instead of in a box Bluesky guesses. A phone's rotated frames are turned upright first.
 - **Link card:** `link: {uri, title, description, thumb_url}`.
 - **Quote:** `quote: "<at:// URI or bsky.app link>"`, and a quote may carry media alongside it.
 
@@ -673,6 +678,7 @@ src/
     facets.ts           links, tags and mentions, in and out
     text.ts             graphemes, UTF-8 offsets, XML escaping
     media.ts            image blobs, aspect ratios, the video service
+    mp4.ts              a video's shown size and length, from its own header
 
   format/
     posts.ts            the tagged output format
@@ -701,7 +707,7 @@ Nothing is uploaded anywhere but Bluesky.
 | Posts and reads | Between you and your PDS |
 | Audit log | Only the file you name in `BLUESKY_AUDIT_LOG` |
 
-There is no telemetry, no analytics and no phone-home. The only hosts contacted are your PDS (`bsky.social` by default), `public.api.bsky.app`, `video.bsky.app` when you post a video, and whatever URL you hand to `images[].url`.
+There is no telemetry, no analytics and no phone-home. The only hosts contacted are your PDS (`bsky.social` by default), `public.api.bsky.app`, `video.bsky.app` when you post a video, `plc.directory` only if your session did not say which PDS holds your account, and whatever URL you hand to `images[].url` or `video_url`. A file you name in `video_path` is read from disk and streamed to `video.bsky.app`; nothing else on your machine is read.
 
 ## 13. Risks
 
@@ -732,7 +738,11 @@ If any of that is more than you want to hand an agent, `BLUESKY_READ_ONLY=1` giv
 | `claude -p` will not post | Headless Claude Code refuses tools that need a person. Give that agent `BLUESKY_CONFIRM=model` |
 | No approval form appears | The client cannot show forms, so the model's `confirm: true` counts, and only for a post you asked for |
 | A piped request gets no answer | Stdin closed before the answer. The MCP stdio binding stops a server when its input ends; keep stdin open until you read the answer, or use the CLI |
-| Video posted but will not play | It went up as a plain blob, not through the transcoder. This server does not do that; another client might have |
+| Video posted but will not play | It went up as a plain blob, so processing started only after the post. This server sends video through the video service first; another client might not |
+| "Bluesky will not accept a video upload right now" | The day's video allowance is spent, or the account's email is not verified: Bluesky-hosted accounts must verify it before posting video |
+| "is not a video Bluesky takes" | Only MP4, MOV, WebM or MPEG. Convert it first; nothing was sent |
+| "Video is still … after 5 minutes" | The video service is slow today. `get_video_job_status` with the job id from the message |
+| A vertical video shows in a square box | It was posted without an aspect ratio. This server reads it from the file; a file it cannot read (not MP4 or MOV) goes without one |
 | Rate limited | Bluesky's write limits. The client backs off; a bulk operation may still exhaust them |
 
 Server not appearing at all: run the command your client runs, by hand, and read stderr.
